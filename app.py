@@ -1,5 +1,10 @@
 import streamlit as st
-import openai
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
 from PyPDF2 import PdfReader
 import docx
 import re
@@ -129,22 +134,36 @@ class ATSResumeChecker:
         """
         
         try:
-            if not self.openai_api_key:
-                # Simulated response for demo purposes
-                return self._get_demo_analysis()
+            if not self.openai_api_key or not OPENAI_AVAILABLE:
+                # Use demo analysis when OpenAI is not available
+                return self._get_demo_analysis(resume_text, job_description)
             
-            client = openai.OpenAI(api_key=self.openai_api_key)
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are an expert ATS analyzer. Provide detailed, actionable resume analysis."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=2000,
-                temperature=0.3
-            )
-            
-            analysis_text = response.choices[0].message.content
+            # Try newer OpenAI client format first
+            try:
+                client = openai.OpenAI(api_key=self.openai_api_key)
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are an expert ATS analyzer. Provide detailed, actionable resume analysis."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=2000,
+                    temperature=0.3
+                )
+                analysis_text = response.choices[0].message.content
+            except:
+                # Fallback to older OpenAI format
+                openai.api_key = self.openai_api_key
+                response = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are an expert ATS analyzer. Provide detailed, actionable resume analysis."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=2000,
+                    temperature=0.3
+                )
+                analysis_text = response.choices[0].message.content
             
             # Extract JSON from response
             json_start = analysis_text.find('{')
@@ -154,14 +173,56 @@ class ATSResumeChecker:
                 json_str = analysis_text[json_start:json_end]
                 return json.loads(json_str)
             else:
-                return self._get_demo_analysis()
+                return self._get_demo_analysis(resume_text, job_description)
                 
         except Exception as e:
             st.error(f"Error in LLM analysis: {str(e)}")
-            return self._get_demo_analysis()
+            return self._get_demo_analysis(resume_text, job_description)
     
-    def _get_demo_analysis(self) -> Dict:
-        """Provide demo analysis when API key is not available"""
+    def _get_demo_analysis(self, resume_text: str = "", job_description: str = "") -> Dict:
+        """Provide demo analysis with basic keyword matching when API key is not available"""
+        
+        # Basic keyword analysis if text is provided
+        if resume_text and job_description:
+            # Simple keyword matching
+            job_keywords = set(re.findall(r'\b\w+\b', job_description.lower()))
+            resume_keywords = set(re.findall(r'\b\w+\b', resume_text.lower()))
+            
+            # Filter out common words
+            common_words = {'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can'}
+            job_keywords = job_keywords - common_words
+            resume_keywords = resume_keywords - common_words
+            
+            matched = job_keywords.intersection(resume_keywords)
+            missing = job_keywords - resume_keywords
+            
+            keyword_score = min(100, int((len(matched) / max(len(job_keywords), 1)) * 100))
+            
+            return {
+                "overall_match_score": max(60, keyword_score + 10),
+                "keyword_match_score": keyword_score,
+                "skills_match_score": min(100, keyword_score + 15),
+                "experience_match_score": min(100, keyword_score + 5),
+                "education_match_score": min(100, keyword_score + 20),
+                "missing_keywords": list(missing)[:10],  # Limit to 10
+                "matched_keywords": list(matched)[:10],  # Limit to 10
+                "missing_skills": ["Advanced analytics", "Machine learning", "Cloud platforms"],
+                "matched_skills": list(matched)[:5] if matched else ["Data analysis", "Problem solving"],
+                "strengths": [
+                    "Good keyword alignment with job requirements",
+                    "Relevant technical background",
+                    "Professional presentation"
+                ],
+                "improvements": [
+                    "Include more specific technical skills",
+                    "Add quantifiable achievements",
+                    "Highlight relevant project experience"
+                ],
+                "detailed_feedback": f"Your resume matches {len(matched)} out of {len(job_keywords)} key terms from the job description. Consider incorporating more specific keywords and technical skills to improve your ATS score.",
+                "recommendation": "Good Match" if keyword_score > 60 else "Needs Improvement"
+            }
+        
+        # Default demo response
         return {
             "overall_match_score": 78,
             "keyword_match_score": 72,
@@ -266,7 +327,7 @@ def main():
             checker.openai_api_key = api_key
             st.success("✅ API Key configured!")
         else:
-            st.info("🔄 Running in demo mode")
+            st.info("🔄 Running in demo mode with basic analysis")
         
         st.markdown("---")
         st.header("📋 Instructions")
@@ -445,3 +506,4 @@ st.markdown("""
 
 if __name__ == "__main__":
     main()
+    
