@@ -1,7 +1,6 @@
 streamlit
-requests
-beautifulsoup4
-langchain
-langchain-community
-langchain-openai
 openai
+PyPDF2
+python-docx
+plotly
+pandas
