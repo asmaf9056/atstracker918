@@ -11,21 +11,23 @@ genai.configure(api_key=os.getenv("AIzaSyBF0PClmBX6Ca29cWUbcL9enGRJ0Dbv17M"))
 # ===============================
 # Streamlit UI
 # ===============================
-st.set_page_config(page_title="ATS Resume Checker", layout="centered")
-st.title("📄 ATS Resume & Cover Letter Checker (Gemini)")
+st.set_page_config(page_title="ATS Tracker", layout="centered")
+st.title("📄 ATS Resume & Cover Letter Analyzer (Gemini)")
 
-st.write("Upload your CV (PDF), add your cover letter, paste a job description, and let Gemini analyze your match.")
+st.write("Upload your CV (PDF), paste your cover letter, and provide a job description. "
+         "The app will evaluate your profile using Google's Gemini AI.")
 
 # Job description input
-job_desc = st.text_area("Paste the Job Description", height=200)
+job_desc = st.text_area("📌 Paste Job Description", height=200)
 
 # CV upload
-cv_file = st.file_uploader("Upload your Resume (PDF)", type=["pdf"])
+cv_file = st.file_uploader("📄 Upload your Resume (PDF)", type=["pdf"])
 
 # Cover letter input
-cover_letter = st.text_area("Paste your Cover Letter", height=200)
+cover_letter = st.text_area("✉️ Paste Cover Letter", height=200)
 
-if st.button("🔍 Analyze"):
+# Run analysis
+if st.button("🔍 Analyze Resume & Cover Letter"):
     if not job_desc:
         st.warning("⚠️ Please paste a job description.")
     elif not cv_file:
@@ -39,34 +41,37 @@ if st.button("🔍 Analyze"):
         for page in pdf_reader.pages:
             cv_text += page.extract_text() or ""
 
-        # ===============================
-        # Build Gemini prompt
-        # ===============================
-        model = genai.GenerativeModel("gemini-pro")
-        prompt = f"""
-        You are an ATS (Applicant Tracking System).
-        Compare the following Resume and Cover Letter against the Job Description. 
-        Provide:
-        1. A match score out of 100.
-        2. Key strengths of the candidate.
-        3. Weaknesses or gaps compared to the JD.
-        4. Suggestions to improve the resume or cover letter.
+        if not cv_text.strip():
+            st.error("❌ Could not extract text from PDF. Please upload a text-based PDF.")
+        else:
+            # ===============================
+            # Build Gemini prompt
+            # ===============================
+            model = genai.GenerativeModel("models/gemini-pro")
+            prompt = f"""
+            You are an advanced ATS (Applicant Tracking System).
+            Compare the Resume and Cover Letter against the Job Description. Provide:
 
-        --- Job Description ---
-        {job_desc}
+            1. Overall match score (0–100).
+            2. Key strengths.
+            3. Weaknesses or gaps compared to the JD.
+            4. Suggestions to improve the resume and cover letter.
 
-        --- Resume (from PDF) ---
-        {cv_text}
+            --- Job Description ---
+            {job_desc}
 
-        --- Cover Letter ---
-        {cover_letter}
-        """
+            --- Resume (from PDF) ---
+            {cv_text}
 
-        with st.spinner("Analyzing with Gemini..."):
-            response = model.generate_content(prompt)
+            --- Cover Letter ---
+            {cover_letter}
+            """
 
-        # ===============================
-        # Display results
-        # ===============================
-        st.subheader("📊 ATS Analysis")
-        st.write(response.text)
+            with st.spinner("🤖 Analyzing with Gemini..."):
+                try:
+                    response = model.generate_content(prompt)
+                    st.subheader("📊 ATS Analysis Result")
+                    st.write(response.text)
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+
